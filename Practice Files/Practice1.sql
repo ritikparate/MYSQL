@@ -445,3 +445,340 @@ select * from test;
 -- DQL - Select 
 -- DCL - Grant Revoke
 -- TCL - Commit Rollback Savepoint
+/* GRANT select on hrdb.myemp to hruser;
+REVOKEselect from hruser on hrdb.myemp;
+TCL: ROLLBACK: To undo actions that you have done by mistake.
+UNDO: go back to previous state before any action.
+
+DBMS is responsible to store and retrive data to / from server.
+But sctualy it doesn't do this directly.
+It does this through Cache/Buffer.
+
+eg. insert into emp values(1,'Jon', 32);
+HEre, Jon does not go directly to Hard DIsk. He 1st goes to cache.
+As long as he is present in cache it can be undone i.e. you can 'ROLLBACK'.
+If after inserting, we excute 'COMMIT' command, Jon's record will be flushed out
+i.e. it will be moved to Hard Disk. After that you can't undo.
+Only option is to DELETE it from Hard Disk. 
+
+
+In server there is a setup command AUTOCOMMIT set to 1, But we have to set it to 0 then only ROLLBACK command will work.
+
+
+Transaction in TCL: It is a set of commands that behaves like a single atomis unit (single
+eg.   Account1   	Account2
+	Balance = 50k 	Balance = 10k
+    Transfer 20k from Acc1 to Acc2
+    In backend there might be a table called
+    Accounts Table 
+    Accno	Name	Balance
+    Acc1	Tom		50k
+    Acc2	Mary	10k
+    
+    When transfer happens following queries will be excuted for each account:
+    For Acc1: update accounts set balance = 30k where accno = acc1;
+    For Acc2: update accounts set balance = 30k where accno = acc32;
+    
+    There will ve a log transactions table also
+    Log_transaction table
+    accno	transaction	amount
+    Acc1	debit		20k
+    Acc2	credit		20k
+    
+    i.e backend following 4 transactions are excetued
+    1. Debit acc1
+    2. credit acc2
+    3. logtransaction fro debit operation
+    4. log transaction for credit operation
+    
+    what if from above only transaction number 1,3,and 4 only excuted successfully?
+    for acc1
+    1. as 1st transaction is executed: Bal = 50k -20k will be debited
+    2. As 2nd transaction is not executed : amount will not be credited to acc2
+    3. as 3rd transaction is executed: acc1 balance  = 30k
+    4. as 4th transaction is executed: acc2 balance = 30k (But actually the amount is not credited
+    You will neve know where 20k has gone from acc1. This is called incosistency.
+    This should never happem. So as part of transction control what do we need to de?
+    - Make sure that all 4 commands behave like 1 unit
+    - Either all should execute or all transcations shoud fail.
+    
+    "When you "START TRANSACTION", AUTOCOMMIT will be turned off temporarity at backend".
+    Then 4 commands will be executed sequentially
+    At the end we will write COMMIT
+    If all 4 commands executed successfully, commit will happed & results will be updated in persistent2
+    
+    
+    INDEX:
+    1. Index is used to improve the performance i.e data retrieval becomes faster.
+    eg. book and book index, serarch word 'Primary Key' in 700 pg.
+    if index is there P -Primary Key: 530,670
+    we will directly go to pg no. 530 & 670 and have information about primary key 
+    2. Indexes are seperated database object. So they take up space in memory unlike views
+    3. Indexes have thier own structure / need memory
+    eg. searching a sid from table where index is not set (Full Table Scn)
+    4. Indexes are created on collumns. eg. Emp table: eid, ename, job, salary
+    select * from emp where eid = 9740; It will search only eid column & will extract record of eid = 9740.
+    select * from emp where ename = 'Tom'; It will be excuted as normal query i.e. will scan entire table.
+    5. There are different types of indexs:
+    Based on Data Type:
+    a. Unique index
+    b. Special index
+    c. Full text index
+    Based on structure
+    a. B-Tree (Balanced) Index
+    b. Hash Index
+	
+    B-Tree (Balanced) Index:
+    -It uses binary tree search technique.
+    - suppose index is created on eid: 23,31,35,45,51,61,65 (8 records are in table)
+    - eid is sorted in ascending order:(it is)
+    - if we want to search eid = 53, center is taken (45+51/2 = 48)
+    - 1st search: compare 53 & 48 , 53>48 so records less that 478 are eliminated and it will search on right side
+    - 2nd search take center (57) of remaining records. 53<57 so search on left of 57
+    - 3rd search: center is 53, 53>52 so search on right of 52. You will get rocord no 53.
+    
+    If there are 8 records any rocord can be searched in 3 searches only. 2^3 =8
+    If there are 1000 records any record can be srarched in 10 searches only. 2^10 = 1000.
+    If no index it would have done 7 searches.
+    In tree structure Leaf Nodes have actual eid along with memory address.
+    When aid is ofund it goes to that memory address directly where entire record is stored and then that record is extracted
+    
+    
+    HASH INDEX: 
+    It uses Hash Function
+    - Hash function points to the location where you can store record.
+    eg. suppose hash function is: (add 1000 to x)
+    if x=20, hash(x) = 1020
+    if x=35, hash(x) = 1035
+    This hashed calue 1020 or 1035 will be used as memory address.
+    Query: insert into emp(35,'jon',40), this record will be stored at 1035 memory lication
+    Query: select * from emp where eid = 35.
+    Again hash(35) will be taken as 1035. It will go to 1035 mem location and will extract the record.
+    
+    Hash function is faster tha B-tree
+    - But there are restrictions
+    - Inside db server there are different enginer.
+    - DB engine is responsible for doing all the work.
+    - When DBA creates a server he/she will also choose what kind of engine is most suited for your application
+    - By default you will have innodb engine
+    - eg. show create table books;
+    - It will show how books table is created
+    - Below, it shows engine name: InnoDB (default)
+    -DBA can change this default engine
+    - MemoryDB: only this engine supports hashing
+    - Balanced tree is most commonly used
+    
+    Question: Why Indexes are not created on ebery column?
+    Ans: 1. More store/space is required for every colummn tree structure
+    2. If DML queries are frequent commands on table, then its not a good idea to create index because 
+    everytime you have to recreate that index which will eventually slow down your system instead of making it faster
+    3. If very few records (5lach) don't create index
+    4. If millions of records, create index
+    5. If you are only reading data from a table,create an index
+    
+    Based on Data Types, Index are:
+    1. Unique Index
+    2. Special Index
+    3. Fulltext Index - 2 & 3 are based on specialized data types
+    
+    1. Special index: Special Data datatype is used to store geometric shapes(points rectangles triangles etc.)
+    2. Fulltext Index: created on text type of data (text, tinytext, longtext- can store upto 4GB of data, entire pdf bnook can be stored in this)
+		If data type of a column is declared as full text which contains entire book it will allow you for flexible search within those contents.
+        
+	3. Unique Index: Can create unique index on char, varchar, numeric, data types
+		When unique constraints is applied at the back end unique index is applied.
+        2 wayas to create unique index:
+        1. Implicitly:
+        - By creating unique constraint or
+        - by defining a column as primary key. Here indexes are automatically created
+        2. Explicitly:
+        - By command: create unique index uidx on emp(eid);
+        - Syntax: create [unique/special/fulltext] index
+						[using Hash/BTree]
+                        On <table_name> (col_name);
+		eg. create Hash Index on book_id of books table:
+        create index hidx using hash on books(bid);
+        But as we are using INNODB by default, it will raise as error.
+    
+    
+    
+*/
+-- TCL Commit dna RollBack
+select * from students;
+insert  into students values(4, 'Classy', 25, 'Mysql');
+select * from students;
+ROLLBACK;
+select * from students;
+set AUTOCOMMIT = 0;
+insert into students values(6,'Kumar', 21, 'Python');
+select * from students;
+ROLLBACK; -- after setting AUTOCOMMIT = 0
+select * from students;
+insert into students values(6,'Kumar', 21, 'Python');
+select  * from students;
+COMMIT; -- once commit data does into permenant memory
+ROLLBACK; -- that's why unable to rollback
+select * from students;
+
+set AUTOCOMMIT = 1;
+
+create table tt(id char);
+select * from tt;
+insert into tt values('a');
+insert into tt values('b');
+select * from tt;
+set sql_safe_updates = 0;
+delete from tt;
+select * from tt;
+
+START TRANSACTION; -- AUTOCOMMIT = 0 automatically
+insert into tt values('a');
+insert into tt values('b');
+select  * from tt;
+ROLLBACK;
+select * from tt;
+
+START TRANSACTION;
+select * from tt;
+insert into tt values('a');
+insert into tt values('b');
+savepoint sb;
+insert into tt values('c');
+insert into tt values('d');
+savepoint sd;
+insert into tt values('e');
+insert into tt values('f');
+select * from tt;
+ROLLBACK to sd;
+select * from tt;
+COMMIT; -- AUTOCOMMIT = 1
+ROLLBACK;
+select * from tt;
+
+/* Start Transaction
+Update = AC = 0 
+Insert = AC = 0
+Drop Table = AC = 1
+Insert - AC = 0
+Commit -- AutoCommit = 1
+
+*/
+
+-- Database objects:  VIEWs TABLE Index SEQUENCE 
+/* VIEWS
+View is a virtual table. It doesn't take any sapce in memory.
+Suppose myemp table has 15 columns and you want randomly any 3 columns from it, you can create
+having only those 3 columns. So view is called 'WIndow on data'.
+Then you don't need to write query by selecting those 3 column names.
+Instead you can write: select * from viewname;
+
+Updatable view
+
+As long as you create a view by takiung columns directly from table as it is,
+your view wqill be an updatab le view i.e. insert, update, delete is possible through view.
+But if oyu have anything special in your select command you can create view
+*/
+
+Show tables;
+select * from myemp limit 10;
+select emp_id, first_name, last_name, job_id from myemp;
+create view myview as select emp_id, first_name, last_name, job_id from myemp;
+select * from myview limit 10;
+
+select * from movies;
+select * from members;
+select mv.title, mm.first_name, mm.last_name from movies as mv left join members as mm on mv.id = mm.movieid;
+
+create view sort as select mv.title, ifnull(mm.first_name, '--') as fname, ifnull(mm.last_name, '--') as lname 
+from movies as mv left join members as mm on mv.id = mm.movieid;
+select * from sort;
+
+select * from authors;
+select * from books;
+
+select * from authors where authorid < 15;
+create view aview as select * from authors where authorid < 15;
+select * from aview;
+ 
+ insert into aview values (20,'Jon Hamm');
+ select * from aview;
+ select * from authors;
+ drop view aview;
+ create view aview as select * from authors where authorid < 15 WITH CHECK OPTION;
+ select * from aview;
+insert into aview values(20,'Jon Hamm');
+insert into aview values(14,'Jon Hamm');
+select * from aview;
+
+-- Index
+desc students;
+show indexes from students;
+
+desc authors;
+show indexes from authors;
+
+-- Explicit Index
+use employees;
+select count(*) from employees;
+select * from employess limit 10;
+select birth_date, first_name, last_name, gender, hire_date from employees;
+show indexes from employees;
+drop index hidx on employees;
+show indexes from employees;
+-- Find all employees who were hired on or later year 2000.
+select * from employees where hire_date >= '2000-01-01';
+
+create index hidx on employees(hire_date);
+select * from employees where hire_date >= '2000-01-01';
+
+
+-- Testing commands from comparison
+select * from myemp;
+select count(*) from myemp;
+select * from myemp where emp_id = 106;
+show indexes from myemp;
+create index  uid on myemp(emp_id);
+select * from myemp;
+
+
+
+
+-- STORED PROCEDURE
+use practicebd4;
+call new_procedure();
+call hello();
+call myproc(5);
+select * from books;
+
+
+
+/* STORED PROCEDURES
+- 2 Types of variables:
+Parameter: used to pass values to stored procedures, functions
+Local Variable: It is the one that you declare within BEGIN and END
+It is available within that block only
+When procedure end, variable also dies
+Local variables need to be declared
+eg. "Devlare x integer default 0;"
+- Whe do we need local variables
+To store intermediate results
+eg. def avg(x1 x2 x3):
+	total = x1 + x2 +x3
+	avg = total/3
+Local variables are: total, avg
+
+- Main reason of local variable is: you can not take out value of a column outside the selected
+
+- Select aid as author; This line is like print() statement only
+= select authorid from books where bookid = authorid; This is actual mysql select command.
+- When you take authorid out from actual query, mysql does not understands what authorid is
+- When authorid is part of select command, mysql understanfds that it is comiung from books table
+and authorid is a columns in books table
+- But when you tale out from se;ect command and put it in print command, mysql does not understand
+Therefore any column can not be taken out of select command
+- Solution:
+- When you select any value, store it in a local variable
+- "Swlwct authorid from books where bookid=bid;"
+and then use that local variable at different place
+    
+*/
